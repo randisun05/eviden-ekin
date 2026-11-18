@@ -43,7 +43,7 @@ class GoogleDriveService
 
     public static function forUser(User $user): static
     {
-        return new static($user);
+        return app(static::class, ['user' => $user]);
     }
 
     /** Suntik HTTP client (untuk pengujian). */
@@ -297,12 +297,12 @@ class GoogleDriveService
      * @param  list<string>  $folderSegments
      * @return array{id:string,name:string,mime_type:?string,size:?int,web_view_link:string,folder_id:string}
      */
-    public function uploadToPath(array $folderSegments, string $localPath, string $fileName, ?string $mimeType = null): array
+    public function uploadToPath(array $folderSegments, string $localPath, string $fileName, ?string $mimeType = null, array $appProperties = []): array
     {
         $folderId = $this->ensureFolderPath($folderSegments);
 
         try {
-            return $this->uploadFile($localPath, $fileName, $folderId, $mimeType);
+            return $this->uploadFile($localPath, $fileName, $folderId, $mimeType, $appProperties);
         } catch (GoogleServiceException $e) {
             if ($e->getCode() !== 404) {
                 throw $e;
@@ -310,7 +310,7 @@ class GoogleDriveService
             Log::warning('Folder Drive tidak ditemukan, cache dibersihkan & upload diulang.', ['user' => $this->user->id]);
             $this->forgetFolderCache();
 
-            return $this->uploadFile($localPath, $fileName, $this->ensureFolderPath($folderSegments), $mimeType);
+            return $this->uploadFile($localPath, $fileName, $this->ensureFolderPath($folderSegments), $mimeType, $appProperties);
         }
     }
 
@@ -320,7 +320,7 @@ class GoogleDriveService
      *
      * @return array{id:string,name:string,mime_type:?string,size:?int,web_view_link:string,folder_id:string}
      */
-    public function uploadFile(string $localPath, string $fileName, string $folderId, ?string $mimeType = null): array
+    public function uploadFile(string $localPath, string $fileName, string $folderId, ?string $mimeType = null, array $appProperties = []): array
     {
         if (! is_file($localPath) || ! is_readable($localPath)) {
             throw new GoogleDriveException("File sumber tidak ditemukan: {$localPath}");
@@ -336,6 +336,8 @@ class GoogleDriveService
         $meta = new DriveFile([
             'name' => $this->sanitizeName($fileName),
             'parents' => [$folderId],
+            // Penanda untuk idempotensi: job yang di-retry bisa menemukan file yang sudah terunggah.
+            'appProperties' => $appProperties ?: null,
         ]);
 
         $handle = fopen($localPath, 'rb');
@@ -368,6 +370,36 @@ class GoogleDriveService
             'mime_type' => $status->mimeType,
             'size' => $status->size !== null ? (int) $status->size : $size,
             'web_view_link' => $status->webViewLink ?: "https://drive.google.com/file/d/{$status->id}/view",
+            'folder_id' => $folderId,
+        ];
+    }
+
+    /**
+     * Cari file yang sebelumnya diunggah dengan appProperties tertentu (dipakai saat retry job).
+     *
+     * @return array{id:string,name:string,mime_type:?string,size:?int,web_view_link:string,folder_id:string}|null
+     */
+    public function findByAppProperty(string $folderId, string $key, string $value): ?array
+    {
+        $q = sprintf(
+            "'%s' in parents and appProperties has { key='%s' and value='%s' } and trashed = false",
+            $this->escapeQuery($folderId), $this->escapeQuery($key), $this->escapeQuery($value),
+        );
+        $res = $this->drive()->files->listFiles([
+            'q' => $q, 'fields' => 'files(id,name,mimeType,size,webViewLink)', 'pageSize' => 1,
+        ]);
+        $f = $res->getFiles()[0] ?? null;
+        if (! $f) {
+            return null;
+        }
+
+        // Pastikan permission publik ada (upload sebelumnya mungkin gagal tepat sebelum langkah ini).
+        $this->makePublicReader($f->id);
+
+        return [
+            'id' => $f->id, 'name' => $f->name, 'mime_type' => $f->mimeType,
+            'size' => $f->size !== null ? (int) $f->size : null,
+            'web_view_link' => $f->webViewLink ?: "https://drive.google.com/file/d/{$f->id}/view",
             'folder_id' => $folderId,
         ];
     }

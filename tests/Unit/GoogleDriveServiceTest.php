@@ -135,4 +135,44 @@ class GoogleDriveServiceTest extends TestCase
         $this->assertStringContainsString('"role":"reader"', (string) $last->getBody());
         $this->assertStringContainsString('"type":"anyone"', (string) $last->getBody());
     }
+
+    public function test_find_by_app_property_returns_existing_file_and_ensures_public(): void
+    {
+        $u = $this->user();
+        $http = $this->http([
+            $this->jr(['files' => [['id' => 'OLD', 'name' => 'a.pdf', 'mimeType' => 'application/pdf', 'size' => '10', 'webViewLink' => 'https://x/OLD']]]),
+            $this->jr(['id' => 'perm']),
+        ]);
+
+        $r = GoogleDriveService::forUser($u)->withHttpClient($http)->findByAppProperty('FOL', 'evident_id', 'abc');
+
+        $this->assertSame('OLD', $r['id']);
+        parse_str($this->history[0]['request']->getUri()->getQuery(), $q);
+        $this->assertStringContainsString("appProperties has { key='evident_id' and value='abc' }", $q['q']);
+        $this->assertStringContainsString('/files/OLD/permissions', (string) $this->history[1]['request']->getUri());
+    }
+
+    public function test_find_by_app_property_returns_null_when_absent(): void
+    {
+        $http = $this->http([$this->jr(['files' => []])]);
+
+        $this->assertNull(GoogleDriveService::forUser($this->user())->withHttpClient($http)->findByAppProperty('FOL', 'evident_id', 'abc'));
+    }
+
+    public function test_upload_sends_app_properties_marker(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'ev');
+        file_put_contents($tmp, 'hello');
+        $http = $this->http([
+            new Response(200, ['Location' => 'https://upload.example/s']),
+            $this->jr(['id' => 'F', 'name' => 'a.txt', 'webViewLink' => 'https://x/F']),
+            $this->jr(['id' => 'perm']),
+        ]);
+
+        GoogleDriveService::forUser($this->user())->withHttpClient($http)
+            ->uploadFile($tmp, 'a.txt', 'FOL', 'text/plain', ['evident_id' => 'abc']);
+        unlink($tmp);
+
+        $this->assertStringContainsString('"appProperties":{"evident_id":"abc"}', (string) $this->history[0]['request']->getBody());
+    }
 }

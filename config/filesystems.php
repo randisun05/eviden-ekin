@@ -30,6 +30,13 @@ return [
 
     'disks' => [
 
+        // Staging sementara untuk upload sebelum dikirim ke Google Drive (dihapus oleh job).
+        'staging' => [
+            'driver' => 'local',
+            'root' => storage_path('app/tmp'),
+            'throw' => true,
+        ],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
