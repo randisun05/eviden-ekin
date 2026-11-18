@@ -175,4 +175,32 @@ class GoogleDriveServiceTest extends TestCase
 
         $this->assertStringContainsString('"appProperties":{"evident_id":"abc"}', (string) $this->history[0]['request']->getBody());
     }
+
+    public function test_google_401_forces_one_token_refresh_then_succeeds(): void
+    {
+        $u = $this->user(['gdrive_root_folder_id' => 'ROOT']);
+        $http = $this->http([
+            $this->jr(['error' => ['code' => 401, 'message' => 'Invalid Credentials']], 401), // search ditolak
+            $this->jr(['access_token' => 'AT2', 'expires_in' => 3600]),                      // refresh paksa
+            $this->jr(['files' => [['id' => 'Y']]]),                                         // search ulang OK
+        ]);
+
+        $svc = GoogleDriveService::forUser($u)->withHttpClient($http);
+        $id = $svc->withAuthRetry(fn () => $svc->ensureFolderPath(['2025']));
+
+        $this->assertSame('Y', $id);
+        $this->assertSame('AT2', $u->fresh()->google_access_token);
+    }
+
+    public function test_persistent_google_401_requires_reauth(): void
+    {
+        $u = $this->user(['gdrive_root_folder_id' => 'ROOT']);
+        $err = $this->jr(['error' => ['code' => 401, 'message' => 'Invalid Credentials']], 401);
+        $http = $this->http([$err, $this->jr(['access_token' => 'AT2', 'expires_in' => 3600]), $err]);
+        $svc = GoogleDriveService::forUser($u)->withHttpClient($http);
+
+        $this->expectException(GoogleDriveException::class);
+        $this->expectExceptionCode(401);
+        $svc->withAuthRetry(fn () => $svc->ensureFolderPath(['2025']));
+    }
 }

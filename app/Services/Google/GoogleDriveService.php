@@ -299,18 +299,47 @@ class GoogleDriveService
      */
     public function uploadToPath(array $folderSegments, string $localPath, string $fileName, ?string $mimeType = null, array $appProperties = []): array
     {
-        $folderId = $this->ensureFolderPath($folderSegments);
+        return $this->withAuthRetry(function () use ($folderSegments, $localPath, $fileName, $mimeType, $appProperties) {
+            $folderId = $this->ensureFolderPath($folderSegments);
 
+            try {
+                return $this->uploadFile($localPath, $fileName, $folderId, $mimeType, $appProperties);
+            } catch (GoogleServiceException $e) {
+                if ($e->getCode() !== 404) {
+                    throw $e;
+                }
+                Log::warning('Folder Drive tidak ditemukan, cache dibersihkan & upload diulang.', ['user' => $this->user->id]);
+                $this->forgetFolderCache();
+
+                return $this->uploadFile($localPath, $fileName, $this->ensureFolderPath($folderSegments), $mimeType, $appProperties);
+            }
+        });
+    }
+
+    /**
+     * Google dapat menolak access token (401) sebelum waktu kedaluwarsa lokal (dicabut, jam bergeser).
+     * Paksa refresh SATU kali lalu ulangi; bila tetap 401, user harus login ulang.
+     */
+    public function withAuthRetry(callable $operation): mixed
+    {
         try {
-            return $this->uploadFile($localPath, $fileName, $folderId, $mimeType, $appProperties);
+            return $operation();
         } catch (GoogleServiceException $e) {
-            if ($e->getCode() !== 404) {
+            if ($e->getCode() !== 401) {
                 throw $e;
             }
-            Log::warning('Folder Drive tidak ditemukan, cache dibersihkan & upload diulang.', ['user' => $this->user->id]);
-            $this->forgetFolderCache();
+        }
 
-            return $this->uploadFile($localPath, $fileName, $this->ensureFolderPath($folderSegments), $mimeType, $appProperties);
+        $this->user->forceFill(['google_access_token' => null, 'token_expires_at' => null])->save();
+        $this->client = $this->drive = null;
+
+        try {
+            return $operation();
+        } catch (GoogleServiceException $e) {
+            if ($e->getCode() === 401) {
+                throw GoogleDriveException::reauthRequired('Google menolak kredensial setelah refresh.');
+            }
+            throw $e;
         }
     }
 

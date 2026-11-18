@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
+import { Button } from '@/Components/ui/button';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/card';
 import { Badge } from '@/Components/ui/badge';
@@ -39,5 +40,6 @@ defineProps<{
             <CardTitle>Mulai dengan membuat periode</CardTitle>
             <CardDescription>Buat periode penilaian (mis. Triwulan I 2025), tambahkan RHK, lalu unggah bukti kerja.</CardDescription>
         </CardHeader>
+        <CardContent><Button as-child><Link href="/periods">Buat periode</Link></Button></CardContent>
     </Card>
 </template>

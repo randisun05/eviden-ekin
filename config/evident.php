@@ -12,4 +12,10 @@ return [
 
     // Refresh token sedikit lebih awal dari kedaluwarsa, detik.
     'token_refresh_leeway' => 120,
+
+    // Batas ukuran upload (MB). Samakan dengan upload_max_filesize/post_max_size PHP & client_max_body_size Nginx.
+    'max_upload_mb' => (int) env('EVIDENT_MAX_UPLOAD_MB', 50),
+
+    // Ekstensi yang diizinkan (divalidasi dari isi file, bukan hanya nama).
+    'allowed_extensions' => ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'],
 ];

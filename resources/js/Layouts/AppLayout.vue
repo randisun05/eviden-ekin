@@ -19,6 +19,10 @@ const logout = () => router.post('/logout');
                 <Link href="/dashboard" class="flex items-center gap-2 font-semibold">
                     <FolderCheck class="size-5 text-primary" /> Evident Kinerja
                 </Link>
+                <nav v-if="user" class="flex items-center gap-1 text-sm">
+                    <Link href="/dashboard" class="rounded px-3 py-1.5 hover:bg-muted">Dashboard</Link>
+                    <Link href="/periods" class="rounded px-3 py-1.5 hover:bg-muted">Periode</Link>
+                </nav>
                 <div v-if="user" class="flex items-center gap-3">
                     <span class="hidden text-sm text-muted-foreground sm:inline">{{ user.name }}</span>
                     <Button variant="ghost" size="sm" @click="logout"><LogOut /> Keluar</Button>

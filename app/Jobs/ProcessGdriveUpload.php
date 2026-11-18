@@ -72,6 +72,14 @@ class ProcessGdriveUpload implements ShouldQueue
             throw $e;
         }
 
+        // Record dihapus user selagi upload berjalan: jangan biarkan file yatim di Drive.
+        if (! Evident::whereKey($evident->id)->exists()) {
+            $drive->deleteFile($result['id']);
+            $this->cleanup();
+
+            return;
+        }
+
         $evident->update([
             'gdrive_file_id' => $result['id'],
             'gdrive_web_view_link' => $result['web_view_link'],
@@ -91,12 +99,20 @@ class ProcessGdriveUpload implements ShouldQueue
         $evident?->update([
             'status' => 'failed',
             'metadata' => array_merge($evident->metadata ?? [], [
-                'error' => mb_substr($e->getMessage(), 0, 500),
+                'error' => mb_substr($this->readableError($e), 0, 500),
                 'reauth_required' => $e instanceof GoogleDriveException && $e->getCode() === 401,
             ]),
         ]);
 
         $this->cleanup();
+    }
+
+    /** Pesan error Google berupa JSON mentah; ambil "message"-nya saja. */
+    private function readableError(Throwable $e): string
+    {
+        $json = json_decode($e->getMessage(), true);
+
+        return is_array($json) ? ($json['error']['message'] ?? $e->getMessage()) : $e->getMessage();
     }
 
     private function cleanup(): void
