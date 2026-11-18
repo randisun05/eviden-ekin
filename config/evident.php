@@ -26,4 +26,8 @@ return [
     'pin_max_attempts' => 5,          // per IP per target
     'pin_decay_seconds' => 600,
     'pin_target_max_attempts' => 30,  // semua IP per target, per jam
+
+    // Berkas staging & upload 'processing' yang lebih tua dari ini dianggap yatim/macet (jam).
+    // Retry job hanya ~8 menit; 48 jam sudah jauh melewati antrean normal.
+    'staging_ttl_hours' => (int) env('EVIDENT_STAGING_TTL_HOURS', 48),
 ];

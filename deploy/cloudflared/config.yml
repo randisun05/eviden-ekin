@@ -1,0 +1,12 @@
+# /etc/cloudflared/config.yml
+# Buat tunnel:  cloudflared tunnel login
+#               cloudflared tunnel create evident-kinerja
+#               cloudflared tunnel route dns evident-kinerja evident.domain.com
+# Pasang sebagai service:  sudo cloudflared service install
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: evident.domain.com
+    service: http://127.0.0.1:8080
+  - service: http_status:404
