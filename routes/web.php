@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -13,7 +14,7 @@ Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])->name('aut
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback']);
 
 Route::middleware(['auth', 'drive.connected'])->group(function () {
-    Route::get('/dashboard', fn () => Inertia::render('Dashboard'))->name('dashboard');
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
 });
 
 Route::post('/logout', [GoogleAuthController::class, 'logout'])->middleware('auth')->name('logout');
