@@ -18,4 +18,12 @@ return [
 
     // Ekstensi yang diizinkan (divalidasi dari isi file, bukan hanya nama).
     'allowed_extensions' => ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'],
+
+    // Basis URL shortlink (mis. https://evident.domain.com). Default: APP_URL.
+    'shortlink_base' => rtrim(env('EVIDENT_SHORTLINK_BASE', env('APP_URL', 'http://localhost')), '/'),
+
+    // Pembatasan tebak-PIN halaman publik.
+    'pin_max_attempts' => 5,          // per IP per target
+    'pin_decay_seconds' => 600,
+    'pin_target_max_attempts' => 30,  // semua IP per target, per jam
 ];

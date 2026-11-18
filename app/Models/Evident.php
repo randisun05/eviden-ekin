@@ -15,7 +15,7 @@ class Evident extends Model
         'rhk_id', 'title', 'evident_type', 'external_url',
         'gdrive_file_id', 'gdrive_web_view_link', 'gdrive_folder_id',
         'app_short_code', 'file_name', 'file_size', 'mime_type',
-        'is_protected', 'access_pin', 'status', 'metadata',
+        'is_protected', 'access_pin', 'expires_at', 'status', 'metadata',
     ];
 
     protected $hidden = ['access_pin'];
@@ -27,6 +27,7 @@ class Evident extends Model
             'file_size' => 'integer',
             'metadata' => 'array',
             'access_pin' => 'hashed', // PIN disimpan sebagai hash
+            'expires_at' => 'datetime',
         ];
     }
 
@@ -44,6 +45,11 @@ class Evident extends Model
         } while (self::where('app_short_code', $code)->exists());
 
         return $code;
+    }
+
+    public function isExpired(): bool
+    {
+        return $this->expires_at !== null && $this->expires_at->isPast();
     }
 
     public function rhk(): BelongsTo

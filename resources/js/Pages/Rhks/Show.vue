@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ExternalLink, FileText, Link2, Lock, Trash2 } from 'lucide-vue-next';
+import { ExternalLink, FileText, Link2, Lock, Settings2, Trash2 } from 'lucide-vue-next';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
-import { Card, CardContent } from '@/Components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/card';
 import EvidentForm from '@/Components/EvidentForm.vue';
+import CopyButton from '@/Components/CopyButton.vue';
+import ShareSettings from '@/Components/ShareSettings.vue';
 import { formatBytes } from '@/lib/format';
-import type { EvidentItem } from '@/types';
+import type { EvidentItem, ShareInfo } from '@/types';
 
 defineOptions({ layout: AppLayout });
 const props = defineProps<{
     rhk: { id: string; code: string; title: string; target_description: string | null };
     period: { id: string; title: string; year: number };
+    share: ShareInfo;
     evidents: EvidentItem[];
     maxUploadMb: number;
     allowedExtensions: string[];
@@ -33,6 +36,8 @@ watch(hasProcessing, (active) => {
     }
 }, { immediate: true });
 onBeforeUnmount(stop);
+
+const openSettings = reactive<Record<string, boolean>>({});
 
 const destroy = (e: EvidentItem) => {
     if (confirm(`Hapus bukti "${e.title}"? Berkas di Google Drive Anda juga akan dihapus.`)) {
@@ -57,6 +62,25 @@ const statusMeta = {
         <p v-if="rhk.target_description" class="mt-2 text-sm text-muted-foreground">{{ rhk.target_description }}</p>
     </div>
 
+    <Card class="mb-6">
+        <CardHeader>
+            <CardTitle>Tautan bagikan untuk e-Kinerja</CardTitle>
+            <CardDescription>Satu halaman rapi berisi seluruh bukti RHK ini. Tempelkan di e-Kinerja.</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <code class="min-w-0 flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">{{ share.url }}</code>
+                <CopyButton :text="share.url" label="Salin tautan" />
+                <Button as="a" :href="share.url" target="_blank" rel="noopener noreferrer" variant="outline" size="sm"><ExternalLink /> Lihat</Button>
+            </div>
+            <p v-if="share.expired" class="text-sm text-destructive">Tautan ini sudah kedaluwarsa. Perpanjang tanggal berlaku di bawah.</p>
+            <ShareSettings :action="`/rhks/${rhk.id}/share`" :regenerate-action="`/rhks/${rhk.id}/share/regenerate`" :is-protected="share.is_protected" :expires-at="share.expires_at" />
+            <p class="text-xs text-muted-foreground">
+                PIN dan tanggal berlaku melindungi <em>halaman</em> ini. Berkas di Google Drive tetap dapat dibuka siapa pun yang memiliki tautan Drive-nya langsung.
+            </p>
+        </CardContent>
+    </Card>
+
     <EvidentForm :rhk="rhk" :period="period" :max-upload-mb="maxUploadMb" :allowed-extensions="allowedExtensions" />
 
     <h2 class="mb-3 text-lg font-semibold">Daftar bukti ({{ evidents.length }})</h2>
@@ -79,7 +103,16 @@ const statusMeta = {
                     <Lock v-if="e.is_protected" class="size-4 text-muted-foreground" aria-label="Dilindungi PIN" />
                     <Badge :variant="statusMeta[e.status].variant">{{ statusMeta[e.status].label }}</Badge>
                     <Button v-if="e.status === 'ready' && (e.drive_link || e.external_url)" as="a" :href="(e.drive_link ?? e.external_url)!" target="_blank" rel="noopener noreferrer" variant="outline" size="sm"><ExternalLink /> Buka</Button>
+                    <Button v-if="e.status === 'ready'" variant="ghost" size="icon" :aria-label="`Pengaturan tautan ${e.title}`" :aria-expanded="!!openSettings[e.id]" @click="openSettings[e.id] = !openSettings[e.id]"><Settings2 /></Button>
                     <Button variant="ghost" size="icon" :aria-label="`Hapus ${e.title}`" @click="destroy(e)"><Trash2 /></Button>
+                </CardContent>
+                <CardContent v-if="e.status === 'ready' && openSettings[e.id]" class="space-y-4 border-t p-4">
+                    <div class="flex flex-wrap gap-2">
+                        <CopyButton v-if="e.links.direct" :text="e.links.direct" :label="e.type === 'file_upload' ? 'Salin tautan Drive' : 'Salin tautan asli'" />
+                        <CopyButton :text="e.links.short" label="Salin shortlink" />
+                    </div>
+                    <p v-if="e.expired" class="text-sm text-destructive">Shortlink bukti ini sudah kedaluwarsa.</p>
+                    <ShareSettings :action="`/evidents/${e.id}/share`" :regenerate-action="`/evidents/${e.id}/share/regenerate`" :is-protected="e.is_protected" :expires-at="e.expires_at" />
                 </CardContent>
             </Card>
         </li>

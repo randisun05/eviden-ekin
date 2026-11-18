@@ -16,5 +16,15 @@ export interface EvidentItem {
     file_name: string | null; file_size: number | null;
     status: 'processing' | 'ready' | 'failed';
     error: string | null; reauth_required: boolean; is_protected: boolean;
-    short_code: string; drive_link: string | null; external_url: string | null; created_at: string;
+    links: { direct: string | null; short: string };
+    expires_at: string | null; expired: boolean;
+    drive_link: string | null; external_url: string | null; created_at: string;
 }
+
+export interface ViewerItem {
+    id: string; title: string; kind: 'pdf' | 'image' | 'file' | 'link';
+    file_name?: string | null; file_size?: number | null;
+    preview_url?: string | null; download_url?: string; open_url: string | null;
+}
+
+export interface ShareInfo { url: string; is_protected: boolean; expires_at: string | null; expired: boolean }

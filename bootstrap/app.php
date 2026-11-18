@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\HandleInertiaRequests::class,
         ]);
         $middleware->alias([
+            'viewer.headers' => \App\Http\Middleware\PublicViewerHeaders::class,
             'drive.connected' => \App\Http\Middleware\EnsureDriveConnected::class,
         ]);
         $middleware->redirectGuestsTo('/login');
