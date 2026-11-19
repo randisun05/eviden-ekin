@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StorePeriodRequest;
 use App\Jobs\DeleteGdriveFiles;
 use App\Models\Evident;
+use App\Models\EvidentFile;
 use App\Models\Period;
 use App\Services\Evident\ReadinessChecker;
 use Illuminate\Http\RedirectResponse;
@@ -62,7 +63,7 @@ class PeriodController extends Controller
     {
         Gate::authorize('delete', $period);
 
-        $fileIds = Evident::whereIn('rhk_id', $period->rhks()->select('id'))
+        $fileIds = EvidentFile::whereIn('evident_id', Evident::whereIn('rhk_id', $period->rhks()->select('id'))->select('id'))
             ->whereNotNull('gdrive_file_id')->pluck('gdrive_file_id')->all();
         $period->delete(); // cascade ke rhks & evidents
         DeleteGdriveFiles::dispatchIf($fileIds !== [], $period->user_id, $fileIds);

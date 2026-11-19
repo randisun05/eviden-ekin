@@ -85,7 +85,7 @@ echo <<<TXT
 
 Siap. Langkah berikutnya (dua jendela terminal di folder ini):
 
-  1) php -d upload_max_filesize=50M -d post_max_size=55M artisan serve
+  1) php -d upload_max_filesize=50M -d post_max_size=95M -d max_file_uploads=20 artisan serve
   2) php artisan queue:work --queue=uploads,default
 
 Lalu buka http://localhost:8000  (harus "localhost", bukan 127.0.0.1)

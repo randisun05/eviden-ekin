@@ -13,33 +13,54 @@ use Illuminate\Support\Str;
 class EvidentUploadService
 {
     /**
-     * Simpan file ke staging lokal, buat record 'processing', lempar job ke antrean.
-     * Tidak ada panggilan ke Google di dalam request HTTP.
+     * Simpan semua berkas ke staging lokal, buat satu bukti 'processing' berisi N berkas,
+     * lalu lempar satu job per berkas ke antrean. Tidak ada panggilan ke Google di request HTTP.
+     *
+     * @param  list<UploadedFile>  $files
      */
-    public function storeFile(Rhk $rhk, UploadedFile $file, string $title, ?string $pin = null): Evident
+    public function storeFiles(Rhk $rhk, array $files, string $title, ?string $pin = null): Evident
     {
-        $original = $file->getClientOriginalName();
-        $stagingName = Str::uuid()->toString().'.'.($file->guessExtension() ?: 'bin');
-        $file->storeAs('', $stagingName, 'staging');
-
+        $staged = []; // [UploadedFile, stagingName]
         try {
-            $evident = DB::transaction(fn () => Evident::create([
-                'rhk_id' => $rhk->id,
-                'title' => $title,
-                'evident_type' => 'file_upload',
-                'file_name' => $original,
-                'file_size' => $file->getSize(),
-                'mime_type' => $file->getMimeType(),
-                'is_protected' => $pin !== null,
-                'access_pin' => $pin,
-                'status' => 'processing',
-            ]));
+            foreach ($files as $file) {
+                $name = Str::uuid()->toString().'.'.($file->guessExtension() ?: 'bin');
+                $file->storeAs('', $name, 'staging');
+                $staged[] = [$file, $name];
+            }
+
+            [$evident, $rows] = DB::transaction(function () use ($rhk, $staged, $title, $pin) {
+                $evident = Evident::create([
+                    'rhk_id' => $rhk->id,
+                    'title' => $title,
+                    'evident_type' => 'file_upload',
+                    'is_protected' => $pin !== null,
+                    'access_pin' => $pin,
+                    'status' => 'processing',
+                ]);
+
+                $rows = [];
+                foreach ($staged as $i => [$file, $name]) {
+                    $rows[] = [$evident->files()->create([
+                        'position' => $i,
+                        'file_name' => $file->getClientOriginalName(),
+                        'file_size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType(),
+                        'status' => 'processing',
+                    ]), $name];
+                }
+
+                return [$evident, $rows];
+            });
         } catch (\Throwable $e) {
-            Storage::disk('staging')->delete($stagingName);
+            foreach ($staged as [, $name]) {
+                Storage::disk('staging')->delete($name);
+            }
             throw $e;
         }
 
-        ProcessGdriveUpload::dispatch($evident->id, $stagingName); // after_commit=true di queue.php
+        foreach ($rows as [$row, $name]) {
+            ProcessGdriveUpload::dispatch($row->id, $name); // after_commit=true di queue.php
+        }
 
         return $evident;
     }

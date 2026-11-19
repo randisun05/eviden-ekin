@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Exceptions\GoogleDriveException;
-use App\Models\Evident;
+use App\Models\EvidentFile;
 use App\Services\Google\GoogleDriveService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -11,8 +11,8 @@ use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * Unggah file staging ke Google Drive milik user, set permission publik,
- * perbarui record evident -> 'ready', lalu hapus file staging.
+ * Unggah SATU berkas staging ke Google Drive milik user, perbarui record berkas -> 'ready',
+ * hitung ulang status bukti induknya, lalu hapus file staging.
  */
 class ProcessGdriveUpload implements ShouldQueue
 {
@@ -21,7 +21,7 @@ class ProcessGdriveUpload implements ShouldQueue
     public int $tries = 3;
     public int $timeout = 900; // harus < queue.connections.redis.retry_after
 
-    public function __construct(public string $evidentId, public string $stagingPath)
+    public function __construct(public string $fileId, public string $stagingPath)
     {
         $this->onQueue('uploads');
     }
@@ -33,18 +33,19 @@ class ProcessGdriveUpload implements ShouldQueue
 
     public function handle(): void
     {
-        $evident = Evident::with('rhk.period.user')->find($this->evidentId);
+        $file = EvidentFile::with('evident.rhk.period.user')->find($this->fileId);
 
-        // Record dihapus user saat antre, atau sudah selesai (retry/duplikasi): bersihkan & selesai.
-        if (! $evident || $evident->status === 'ready') {
+        // Berkas/bukti dihapus user saat antre, atau sudah selesai (retry/duplikasi): bersihkan & selesai.
+        if (! $file || $file->status === 'ready') {
             $this->cleanup();
 
             return;
         }
 
+        $evident = $file->evident;
         $period = $evident->rhk->period;
         $segments = [(string) $period->year, $period->title, $evident->rhk->code];
-        $marker = ['evident_id' => $evident->id];
+        $marker = ['evident_file_id' => $file->id];
         $drive = GoogleDriveService::forUser($period->user);
 
         try {
@@ -53,14 +54,14 @@ class ProcessGdriveUpload implements ShouldQueue
             // Retry: mungkin upload sebelumnya sudah sukses sebelum DB sempat diperbarui.
             if ($this->attempts() > 1) {
                 $folderId = $drive->ensureFolderPath($segments);
-                $result = $drive->findByAppProperty($folderId, 'evident_id', $evident->id);
+                $result = $drive->findByAppProperty($folderId, 'evident_file_id', $file->id);
             }
 
             $result ??= $drive->uploadToPath(
                 $segments,
                 Storage::disk('staging')->path($this->stagingPath),
-                $evident->file_name ?? basename($this->stagingPath),
-                $evident->mime_type,
+                $file->file_name ?? basename($this->stagingPath),
+                $file->mime_type,
                 $marker,
             );
         } catch (GoogleDriveException $e) {
@@ -72,22 +73,24 @@ class ProcessGdriveUpload implements ShouldQueue
             throw $e;
         }
 
-        // Record dihapus user selagi upload berjalan: jangan biarkan file yatim di Drive.
-        if (! Evident::whereKey($evident->id)->exists()) {
+        // Berkas/bukti dihapus user selagi upload berjalan: jangan biarkan file yatim di Drive.
+        if (! EvidentFile::whereKey($file->id)->exists()) {
             $drive->deleteFile($result['id']);
             $this->cleanup();
 
             return;
         }
 
-        $evident->update([
+        $file->update([
             'gdrive_file_id' => $result['id'],
             'gdrive_web_view_link' => $result['web_view_link'],
             'gdrive_folder_id' => $result['folder_id'],
-            'file_size' => $result['size'] ?? $evident->file_size,
+            'file_size' => $result['size'] ?? $file->file_size,
             'status' => 'ready',
-            'metadata' => array_merge($evident->metadata ?? [], ['error' => null]),
+            'error' => null,
+            'reauth_required' => false,
         ]);
+        $evident->refreshStatus();
 
         $this->cleanup();
     }
@@ -95,14 +98,15 @@ class ProcessGdriveUpload implements ShouldQueue
     /** Dipanggil setelah semua percobaan habis / job di-fail. */
     public function failed(Throwable $e): void
     {
-        $evident = Evident::find($this->evidentId);
-        $evident?->update([
-            'status' => 'failed',
-            'metadata' => array_merge($evident->metadata ?? [], [
+        $file = EvidentFile::find($this->fileId);
+        if ($file) {
+            $file->update([
+                'status' => 'failed',
                 'error' => mb_substr($this->readableError($e), 0, 500),
                 'reauth_required' => $e instanceof GoogleDriveException && $e->getCode() === 401,
-            ]),
-        ]);
+            ]);
+            $file->evident?->refreshStatus();
+        }
 
         $this->cleanup();
     }

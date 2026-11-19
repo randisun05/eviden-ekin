@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { reactive } from 'vue';
 import { Head } from '@inertiajs/vue3';
-import { Download, ExternalLink, Eye, EyeOff, FileText, Image as ImageIcon, Link2 } from 'lucide-vue-next';
+import { Download, ExternalLink, Eye, EyeOff, FileText, Files, Image as ImageIcon, Link2 } from 'lucide-vue-next';
 import PublicLayout from '@/Layouts/PublicLayout.vue';
 import { Button } from '@/Components/ui/button';
 import { Card, CardContent } from '@/Components/ui/card';
 import { formatBytes } from '@/lib/format';
-import type { ViewerItem } from '@/types';
+import type { ViewerFile, ViewerItem } from '@/types';
 
 defineOptions({ layout: PublicLayout });
 defineProps<{
@@ -20,7 +20,7 @@ defineProps<{
 
 // Pratinjau dimuat hanya saat diminta (menghindari banyak iframe Drive sekaligus).
 const open = reactive<Record<string, boolean>>({});
-const icon = (k: ViewerItem['kind']) => (k === 'image' ? ImageIcon : k === 'link' ? Link2 : FileText);
+const icon = (k: ViewerFile['kind'] | 'link') => (k === 'image' ? ImageIcon : k === 'link' ? Link2 : FileText);
 const host = (u: string | null) => { try { return u ? new URL(u).host : ''; } catch { return ''; } };
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 </script>
@@ -43,30 +43,56 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day
         <li v-for="it in items" :key="it.id">
             <Card>
                 <CardContent class="p-4">
-                    <div class="flex flex-wrap items-center gap-3">
-                        <component :is="icon(it.kind)" class="size-5 shrink-0 text-muted-foreground" />
+                    <!-- Tautan eksternal -->
+                    <div v-if="it.kind === 'link'" class="flex flex-wrap items-center gap-3">
+                        <Link2 class="size-5 shrink-0 text-muted-foreground" />
                         <div class="min-w-0 flex-1">
                             <p class="truncate font-medium">{{ it.title }}</p>
-                            <p class="truncate text-xs text-muted-foreground">
-                                <template v-if="it.kind === 'link'">Tautan eksternal · {{ host(it.open_url) }}</template>
-                                <template v-else>{{ it.file_name }} · {{ formatBytes(it.file_size) }}</template>
-                            </p>
+                            <p class="truncate text-xs text-muted-foreground">Tautan eksternal · {{ host(it.open_url ?? null) }}</p>
                         </div>
-                        <div class="flex flex-wrap gap-2">
-                            <Button v-if="it.preview_url" variant="outline" size="sm" :aria-expanded="!!open[it.id]" @click="open[it.id] = !open[it.id]">
-                                <component :is="open[it.id] ? EyeOff : Eye" /> {{ open[it.id] ? 'Tutup' : 'Pratinjau' }}
-                            </Button>
-                            <Button v-if="it.download_url" as="a" :href="it.download_url" target="_blank" rel="noopener noreferrer" variant="outline" size="sm"><Download /> Unduh</Button>
-                            <Button v-if="it.open_url" as="a" :href="it.open_url" target="_blank" rel="noopener noreferrer" size="sm"><ExternalLink /> Buka</Button>
-                        </div>
+                        <Button v-if="it.open_url" as="a" :href="it.open_url" target="_blank" rel="noopener noreferrer" size="sm"><ExternalLink /> Buka</Button>
                     </div>
-                    <iframe
-                        v-if="it.preview_url && open[it.id]"
-                        :src="it.preview_url" :title="`Pratinjau ${it.title}`"
-                        class="mt-4 h-[70vh] w-full rounded-md border bg-muted"
-                        loading="lazy" referrerpolicy="no-referrer"
-                        sandbox="allow-scripts allow-same-origin allow-popups" allow="fullscreen"
-                    />
+
+                    <!-- Bukti berisi satu atau beberapa berkas -->
+                    <template v-else>
+                        <div v-if="(it.files?.length ?? 0) > 1" class="mb-3 flex items-center gap-3">
+                            <Files class="size-5 shrink-0 text-muted-foreground" />
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate font-medium">{{ it.title }}</p>
+                                <p class="text-xs text-muted-foreground">{{ it.files?.length }} berkas</p>
+                            </div>
+                        </div>
+                        <p v-if="(it.files?.length ?? 0) === 0" class="text-sm text-muted-foreground">{{ it.title }} — belum ada berkas yang tersedia.</p>
+
+                        <ul class="divide-y">
+                            <li v-for="f in it.files" :key="f.id" class="py-3 first:pt-0 last:pb-0">
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <component :is="icon(f.kind)" class="size-5 shrink-0 text-muted-foreground" />
+                                    <div class="min-w-0 flex-1">
+                                        <p class="truncate font-medium">{{ it.files!.length > 1 ? f.file_name : it.title }}</p>
+                                        <p class="truncate text-xs text-muted-foreground">
+                                            <template v-if="it.files!.length > 1">{{ formatBytes(f.file_size) }}</template>
+                                            <template v-else>{{ f.file_name }} · {{ formatBytes(f.file_size) }}</template>
+                                        </p>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <Button v-if="f.preview_url" variant="outline" size="sm" :aria-expanded="!!open[f.id]" @click="open[f.id] = !open[f.id]">
+                                            <component :is="open[f.id] ? EyeOff : Eye" /> {{ open[f.id] ? 'Tutup' : 'Pratinjau' }}
+                                        </Button>
+                                        <Button as="a" :href="f.download_url" target="_blank" rel="noopener noreferrer" variant="outline" size="sm"><Download /> Unduh</Button>
+                                        <Button v-if="f.open_url" as="a" :href="f.open_url" target="_blank" rel="noopener noreferrer" size="sm"><ExternalLink /> Buka</Button>
+                                    </div>
+                                </div>
+                                <iframe
+                                    v-if="f.preview_url && open[f.id]"
+                                    :src="f.preview_url" :title="`Pratinjau ${f.file_name}`"
+                                    class="mt-4 h-[70vh] w-full rounded-md border bg-muted"
+                                    loading="lazy" referrerpolicy="no-referrer"
+                                    sandbox="allow-scripts allow-same-origin allow-popups" allow="fullscreen"
+                                />
+                            </li>
+                        </ul>
+                    </template>
                 </CardContent>
             </Card>
         </li>

@@ -87,19 +87,19 @@ class EvidenceManagementTest extends TestCase
         $base = ['evident_type' => 'file_upload', 'title' => 'Laporan'];
 
         // ekstensi berbahaya
-        $this->actingAs($u)->post($url, $base + ['file' => UploadedFile::fake()->create('x.php', 1)])->assertSessionHasErrors('file');
+        $this->actingAs($u)->post($url, $base + ['files' => [UploadedFile::fake()->create('x.php', 1)]])->assertSessionHasErrors('files.0');
         // kode PHP sungguhan yang disamarkan sebagai .pdf -> ditolak dari ISI file (bukan hanya nama)
         $tmp = tempnam(sys_get_temp_dir(), 'ev');
         file_put_contents($tmp, '<?php echo system($_GET["c"]); ?>');
         $disguised = new UploadedFile($tmp, 'x.pdf', 'application/pdf', null, true);
-        $this->actingAs($u)->post($url, $base + ['file' => $disguised])->assertSessionHasErrors('file');
+        $this->actingAs($u)->post($url, $base + ['files' => [$disguised]])->assertSessionHasErrors('files.0');
         @unlink($tmp);
         // terlalu besar
         config(['evident.max_upload_mb' => 1]);
-        $this->actingAs($u)->post($url, $base + ['file' => UploadedFile::fake()->create('big.pdf', 2048, 'application/pdf')])->assertSessionHasErrors('file');
+        $this->actingAs($u)->post($url, $base + ['files' => [UploadedFile::fake()->create('big.pdf', 2048, 'application/pdf')]])->assertSessionHasErrors('files.0');
         // PIN tidak valid
         config(['evident.max_upload_mb' => 50]);
-        $this->actingAs($u)->post($url, $base + ['pin' => '12', 'file' => UploadedFile::fake()->create('a.pdf', 5, 'application/pdf')])->assertSessionHasErrors('pin');
+        $this->actingAs($u)->post($url, $base + ['pin' => '12', 'files' => [UploadedFile::fake()->create('a.pdf', 5, 'application/pdf')]])->assertSessionHasErrors('pin');
 
         Queue::assertNothingPushed();
         $this->assertDatabaseCount('evidents', 0);
@@ -114,13 +114,77 @@ class EvidenceManagementTest extends TestCase
 
         $this->actingAs($u)->post("/rhks/{$rhk->id}/evidents", [
             'evident_type' => 'file_upload', 'title' => 'Laporan', 'pin' => '1234',
-            'file' => UploadedFile::fake()->create('a.pdf', 5, 'application/pdf'),
+            'files' => [UploadedFile::fake()->create('a.pdf', 5, 'application/pdf')],
         ])->assertSessionHasNoErrors()->assertRedirect();
 
         $e = Evident::firstOrFail();
         $this->assertSame('processing', $e->status);
         $this->assertSame(8, strlen($e->app_short_code));
-        Queue::assertPushed(ProcessGdriveUpload::class);
+        $this->assertCount(1, $e->files);
+        Queue::assertPushed(ProcessGdriveUpload::class, 1);
+    }
+
+    public function test_multiple_files_make_one_evident_and_one_job_each(): void
+    {
+        Storage::fake('staging');
+        Queue::fake();
+        $u = $this->user();
+        $rhk = $this->rhkFor($u);
+
+        $this->actingAs($u)->post("/rhks/{$rhk->id}/evidents", [
+            'evident_type' => 'file_upload', 'title' => 'Paket bukti',
+            'files' => [
+                UploadedFile::fake()->create('a.pdf', 5, 'application/pdf'),
+                UploadedFile::fake()->create('b.pdf', 6, 'application/pdf'),
+                UploadedFile::fake()->image('c.png'),
+            ],
+        ])->assertSessionHasNoErrors()->assertRedirect();
+
+        $e = Evident::firstOrFail();
+        $this->assertDatabaseCount('evidents', 1);
+        $this->assertSame(['a.pdf', 'b.pdf', 'c.png'], $e->files->pluck('file_name')->all());
+        $this->assertSame([0, 1, 2], $e->files->pluck('position')->all());
+        $this->assertCount(3, Storage::disk('staging')->files());
+        Queue::assertPushed(ProcessGdriveUpload::class, 3);
+    }
+
+    public function test_file_count_and_total_size_limits(): void
+    {
+        Storage::fake('staging');
+        Queue::fake();
+        $u = $this->user();
+        $rhk = $this->rhkFor($u);
+        $url = "/rhks/{$rhk->id}/evidents";
+        $mk = fn (int $n, int $kb = 5) => array_map(fn ($i) => UploadedFile::fake()->create("f$i.pdf", $kb, 'application/pdf'), range(1, $n));
+
+        config(['evident.max_files' => 2]);
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'files' => $mk(3)])->assertSessionHasErrors('files');
+
+        config(['evident.max_files' => 20, 'evident.max_total_mb' => 1]);
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'files' => $mk(2, 700)])->assertSessionHasErrors('files');
+
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'files' => []])->assertSessionHasErrors('files');
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't'])->assertSessionHasErrors('files');
+
+        Queue::assertNothingPushed();
+        $this->assertDatabaseCount('evidents', 0);
+        $this->assertCount(0, Storage::disk('staging')->files());
+    }
+
+    public function test_deleting_multi_file_evident_queues_every_drive_file(): void
+    {
+        Queue::fake();
+        $u = $this->user();
+        $rhk = $this->rhkFor($u);
+        $e = Evident::create(['rhk_id' => $rhk->id, 'title' => 'a', 'evident_type' => 'file_upload', 'status' => 'ready']);
+        foreach (['F1', 'F2', null] as $i => $id) {
+            $e->files()->create(['position' => $i, 'file_name' => "f$i.pdf", 'gdrive_file_id' => $id, 'status' => $id ? 'ready' : 'failed']);
+        }
+
+        $this->actingAs($u)->delete("/evidents/{$e->id}");
+
+        Queue::assertPushed(DeleteGdriveFiles::class, fn ($j) => $j->fileIds === ['F1', 'F2']);
+        $this->assertDatabaseCount('evident_files', 0);
     }
 
     public function test_external_link_must_be_http_or_https(): void
@@ -141,7 +205,8 @@ class EvidenceManagementTest extends TestCase
         Queue::fake();
         $u = $this->user();
         $rhk = $this->rhkFor($u);
-        $withFile = Evident::create(['rhk_id' => $rhk->id, 'title' => 'a', 'evident_type' => 'file_upload', 'gdrive_file_id' => 'F1', 'status' => 'ready']);
+        $withFile = Evident::create(['rhk_id' => $rhk->id, 'title' => 'a', 'evident_type' => 'file_upload', 'status' => 'ready']);
+        $withFile->files()->create(['file_name' => 'a.pdf', 'gdrive_file_id' => 'F1', 'status' => 'ready']);
         $link = Evident::create(['rhk_id' => $rhk->id, 'title' => 'b', 'evident_type' => 'external_link', 'status' => 'ready']);
 
         $this->actingAs($u)->delete("/evidents/{$link->id}");
@@ -159,7 +224,8 @@ class EvidenceManagementTest extends TestCase
         $r1 = $this->rhkFor($u, 'R1');
         $r2 = $this->rhkFor($u, 'R2');
         foreach ([[$r1, 'F1'], [$r2, 'F2']] as [$r, $f]) {
-            Evident::create(['rhk_id' => $r->id, 'title' => 't', 'evident_type' => 'file_upload', 'gdrive_file_id' => $f, 'status' => 'ready']);
+            Evident::create(['rhk_id' => $r->id, 'title' => 't', 'evident_type' => 'file_upload', 'status' => 'ready'])
+                ->files()->create(['file_name' => 'a.pdf', 'gdrive_file_id' => $f, 'status' => 'ready']);
         }
 
         $this->actingAs($u)->delete("/periods/{$r1->period_id}")->assertRedirect(route('periods.index'));

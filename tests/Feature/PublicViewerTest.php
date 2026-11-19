@@ -28,11 +28,36 @@ class PublicViewerTest extends TestCase
         $this->rhk = Rhk::create(['period_id' => $p->id, 'code' => 'RHK-01', 'title' => 'Laporan', 'target_description' => '12 dokumen']);
     }
 
+    /** Atribut kolom berkas dipisah ke EvidentFile; sisanya ke Evident. */
     private function ev(array $attrs = []): Evident
     {
-        return Evident::create($attrs + ['rhk_id' => $this->rhk->id, 'title' => 'Dok', 'evident_type' => 'file_upload',
-            'file_name' => 'a.pdf', 'mime_type' => 'application/pdf', 'gdrive_file_id' => 'FILE1',
-            'gdrive_web_view_link' => 'https://drive.google.com/file/d/FILE1/view', 'status' => 'ready']);
+        $fileKeys = ['file_name', 'mime_type', 'gdrive_file_id', 'gdrive_web_view_link'];
+        $file = array_intersect_key($attrs, array_flip($fileKeys));
+        $e = Evident::create(array_diff_key($attrs, array_flip($fileKeys)) + ['rhk_id' => $this->rhk->id, 'title' => 'Dok',
+            'evident_type' => 'file_upload', 'status' => 'ready']);
+
+        if ($e->evident_type === 'file_upload') {
+            $e->files()->create($file + ['file_name' => 'a.pdf', 'mime_type' => 'application/pdf', 'gdrive_file_id' => 'FILE1',
+                'gdrive_web_view_link' => 'https://drive.google.com/file/d/FILE1/view', 'status' => $e->status]);
+        }
+
+        return $e;
+    }
+
+    public function test_multi_file_evident_lists_every_ready_file(): void
+    {
+        $e = $this->ev(['title' => 'Paket']);
+        $e->files()->create(['position' => 1, 'file_name' => 'b.png', 'mime_type' => 'image/png', 'gdrive_file_id' => 'FILE2',
+            'gdrive_web_view_link' => 'https://drive.google.com/file/d/FILE2/view', 'status' => 'ready']);
+        $e->files()->create(['position' => 2, 'file_name' => 'c.docx', 'mime_type' => 'application/msword', 'gdrive_file_id' => 'FILE3', 'status' => 'failed']);
+
+        $this->get('/v/'.$e->app_short_code)->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('mode', 'single')->has('items', 1)
+            ->where('items.0.kind', 'file')
+            ->has('items.0.files', 2) // berkas yang belum siap tidak tampil
+            ->where('items.0.files.0.kind', 'pdf')
+            ->where('items.0.files.1.kind', 'image')
+            ->where('items.0.files.1.download_url', 'https://drive.google.com/uc?export=download&id=FILE2'));
     }
 
     public function test_code_namespaces_cannot_collide(): void
@@ -59,9 +84,10 @@ class PublicViewerTest extends TestCase
             ->where('period', 'Triwulan I 2025')
             ->where('rhk.code', 'RHK-01')
             ->has('items', 3)
-            ->where('items.0.kind', 'pdf')
-            ->where('items.0.preview_url', 'https://drive.google.com/file/d/FILE1/preview')
-            ->where('items.1.kind', 'image')
+            ->where('items.0.kind', 'file')
+            ->where('items.0.files.0.kind', 'pdf')
+            ->where('items.0.files.0.preview_url', 'https://drive.google.com/file/d/FILE1/preview')
+            ->where('items.1.files.0.kind', 'image')
             ->where('items.2.kind', 'link')
             ->missing('items.0.access_pin'));
         $res->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');

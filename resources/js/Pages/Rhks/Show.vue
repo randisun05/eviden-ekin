@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ExternalLink, FileText, Link2, Lock, Settings2, Trash2 } from 'lucide-vue-next';
+import { ExternalLink, FileText, Files, Link2, Lock, Settings2, Trash2 } from 'lucide-vue-next';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
@@ -19,6 +19,8 @@ const props = defineProps<{
     share: ShareInfo;
     evidents: EvidentItem[];
     maxUploadMb: number;
+    maxFiles: number;
+    maxTotalMb: number;
     allowedExtensions: string[];
 }>();
 
@@ -40,7 +42,7 @@ onBeforeUnmount(stop);
 const openSettings = reactive<Record<string, boolean>>({});
 
 const destroy = (e: EvidentItem) => {
-    if (confirm(`Hapus bukti "${e.title}"? Berkas di Google Drive Anda juga akan dihapus.`)) {
+    if (confirm(`Hapus bukti "${e.title}"? ${e.files.length > 1 ? `Ke-${e.files.length} berkas` : 'Berkas'} di Google Drive Anda juga akan dihapus.`)) {
         router.delete(`/evidents/${e.id}`, { preserveScroll: true });
     }
 };
@@ -81,7 +83,7 @@ const statusMeta = {
         </CardContent>
     </Card>
 
-    <EvidentForm :rhk="rhk" :period="period" :max-upload-mb="maxUploadMb" :allowed-extensions="allowedExtensions" />
+    <EvidentForm :rhk="rhk" :period="period" :max-upload-mb="maxUploadMb" :max-files="maxFiles" :max-total-mb="maxTotalMb" :allowed-extensions="allowedExtensions" />
 
     <h2 class="mb-3 text-lg font-semibold">Daftar bukti ({{ evidents.length }})</h2>
     <p v-if="evidents.length === 0" class="text-muted-foreground">Belum ada bukti kerja.</p>
@@ -89,15 +91,21 @@ const statusMeta = {
         <li v-for="e in evidents" :key="e.id">
             <Card>
                 <CardContent class="flex flex-wrap items-center gap-3 p-4">
-                    <component :is="e.type === 'file_upload' ? FileText : Link2" class="size-5 shrink-0 text-muted-foreground" />
+                    <component :is="e.type === 'file_upload' ? (e.files.length > 1 ? Files : FileText) : Link2" class="size-5 shrink-0 text-muted-foreground" />
                     <div class="min-w-0 flex-1">
                         <p class="truncate font-medium">{{ e.title }}</p>
-                        <p class="truncate text-xs text-muted-foreground">
-                            <template v-if="e.type === 'file_upload'">{{ e.file_name }} · {{ formatBytes(e.file_size) }}</template>
-                            <template v-else>{{ e.external_url }}</template>
-                        </p>
+                        <p v-if="e.type === 'external_link'" class="truncate text-xs text-muted-foreground">{{ e.external_url }}</p>
+                        <p v-else-if="e.files.length === 1" class="truncate text-xs text-muted-foreground">{{ e.files[0].file_name }} · {{ formatBytes(e.files[0].file_size) }}</p>
+                        <p v-else class="text-xs text-muted-foreground">{{ e.files.length }} berkas · {{ formatBytes(e.total_size) }}</p>
+                        <ul v-if="e.type === 'file_upload' && e.files.length > 1" class="mt-2 space-y-1 text-xs">
+                            <li v-for="f in e.files" :key="f.id" class="flex items-center gap-2">
+                                <span class="min-w-0 flex-1 truncate">{{ f.file_name }} <span class="text-muted-foreground">· {{ formatBytes(f.file_size) }}</span></span>
+                                <Badge :variant="statusMeta[f.status].variant">{{ statusMeta[f.status].label }}</Badge>
+                                <a v-if="f.status === 'ready' && f.drive_link" :href="f.drive_link" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">Buka</a>
+                            </li>
+                        </ul>
                         <p v-if="e.status === 'failed'" class="mt-1 text-xs text-destructive">
-                            {{ e.reauth_required ? 'Akses Google Drive dicabut. Masuk ulang dengan Google, lalu unggah kembali.' : 'Unggah gagal. Hapus lalu unggah ulang.' }}
+                            {{ e.reauth_required ? 'Akses Google Drive dicabut. Masuk ulang dengan Google, lalu unggah kembali.' : (e.files.length > 1 ? 'Unggah gagal pada sebagian berkas. Hapus lalu unggah ulang.' : 'Unggah gagal. Hapus lalu unggah ulang.') }}
                         </p>
                     </div>
                     <Lock v-if="e.is_protected" class="size-4 text-muted-foreground" aria-label="Dilindungi PIN" />

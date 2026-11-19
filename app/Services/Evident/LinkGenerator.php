@@ -17,7 +17,10 @@ class LinkGenerator
     public function forEvident(Evident $e): array
     {
         return [
-            'direct' => $e->evident_type === 'file_upload' ? $e->gdrive_web_view_link : $e->external_url,
+            // Berkas tunggal: tautan Drive-nya. Banyak berkas: tidak ada satu tautan langsung (pakai shortlink).
+            'direct' => $e->evident_type === 'file_upload'
+                ? ($e->files->count() === 1 ? $e->files->first()->gdrive_web_view_link : null)
+                : $e->external_url,
             'short' => $this->shortUrl($e->app_short_code),
         ];
     }

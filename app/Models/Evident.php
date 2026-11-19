@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Models\Concerns\HasUuidV4;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class Evident extends Model
@@ -12,9 +14,7 @@ class Evident extends Model
     use HasUuidV4;
 
     protected $fillable = [
-        'rhk_id', 'title', 'evident_type', 'external_url',
-        'gdrive_file_id', 'gdrive_web_view_link', 'gdrive_folder_id',
-        'app_short_code', 'file_name', 'file_size', 'mime_type',
+        'rhk_id', 'title', 'evident_type', 'external_url', 'app_short_code',
         'is_protected', 'access_pin', 'expires_at', 'status', 'metadata',
     ];
 
@@ -55,5 +55,43 @@ class Evident extends Model
     public function rhk(): BelongsTo
     {
         return $this->belongsTo(Rhk::class);
+    }
+
+    /** Berkas bukti, berurutan sesuai urutan unggah. */
+    public function files(): HasMany
+    {
+        return $this->hasMany(EvidentFile::class)->orderBy('position');
+    }
+
+    /**
+     * Hitung ulang status gabungan dari berkas-berkasnya: 'processing' selama masih ada yang
+     * berjalan, lalu 'failed' bila ada yang gagal, selain itu 'ready'. Dikunci agar dua job yang
+     * selesai bersamaan tidak saling menimpa.
+     */
+    public function refreshStatus(): void
+    {
+        DB::transaction(function () {
+            $locked = self::whereKey($this->id)->lockForUpdate()->first();
+            if (! $locked || $locked->evident_type !== 'file_upload') {
+                return;
+            }
+
+            $files = $locked->files()->get(['status', 'error', 'reauth_required']);
+            $failed = $files->firstWhere('status', 'failed');
+            $status = match (true) {
+                $files->isEmpty() => $locked->status,
+                $files->contains('status', 'processing') => 'processing',
+                $failed !== null => 'failed',
+                default => 'ready',
+            };
+
+            $locked->update([
+                'status' => $status,
+                'metadata' => array_merge($locked->metadata ?? [], $status === 'failed'
+                    ? ['error' => $failed->error, 'reauth_required' => (bool) $failed->reauth_required]
+                    : ['error' => null, 'reauth_required' => false]),
+            ]);
+            $this->setRawAttributes($locked->getAttributes(), true);
+        });
     }
 }

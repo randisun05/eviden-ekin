@@ -85,7 +85,7 @@ class ViewerController extends Controller
     {
         $target = strlen($code) === 10
             ? Rhk::with('period.user')->where('app_short_code', $code)->first()
-            : Evident::with('rhk.period.user')->where('app_short_code', $code)->first();
+            : Evident::with('rhk.period.user', 'files')->where('app_short_code', $code)->first();
 
         abort_if($target === null, 404);
         // Bukti yang belum selesai diunggah tidak boleh terlihat.
@@ -114,7 +114,7 @@ class ViewerController extends Controller
     {
         $rhk = $target instanceof Rhk ? $target : $target->rhk;
         $evidents = $target instanceof Rhk
-            ? $target->evidents()->where('status', 'ready')->oldest()->get()
+            ? $target->evidents()->with('files')->where('status', 'ready')->oldest()->get()
             : collect([$target]);
 
         return [
@@ -133,16 +133,20 @@ class ViewerController extends Controller
             return ['id' => $e->id, 'title' => $e->title, 'kind' => 'link', 'open_url' => $e->external_url];
         }
 
-        $id = rawurlencode((string) $e->gdrive_file_id);
-        $mime = (string) $e->mime_type;
-        $kind = $mime === 'application/pdf' ? 'pdf' : (str_starts_with($mime, 'image/') ? 'image' : 'file');
+        $files = $e->files->where('status', 'ready')->map(function ($f) {
+            $id = rawurlencode((string) $f->gdrive_file_id);
+            $mime = (string) $f->mime_type;
+            $kind = $mime === 'application/pdf' ? 'pdf' : (str_starts_with($mime, 'image/') ? 'image' : 'file');
 
-        return [
-            'id' => $e->id, 'title' => $e->title, 'kind' => $kind,
-            'file_name' => $e->file_name, 'file_size' => $e->file_size,
-            'preview_url' => in_array($kind, ['pdf', 'image']) ? "https://drive.google.com/file/d/{$id}/preview" : null,
-            'download_url' => "https://drive.google.com/uc?export=download&id={$id}",
-            'open_url' => $e->gdrive_web_view_link,
-        ];
+            return [
+                'id' => $f->id, 'kind' => $kind,
+                'file_name' => $f->file_name, 'file_size' => $f->file_size,
+                'preview_url' => in_array($kind, ['pdf', 'image']) ? "https://drive.google.com/file/d/{$id}/preview" : null,
+                'download_url' => "https://drive.google.com/uc?export=download&id={$id}",
+                'open_url' => $f->gdrive_web_view_link,
+            ];
+        })->values()->all();
+
+        return ['id' => $e->id, 'title' => $e->title, 'kind' => 'file', 'files' => $files];
     }
 }

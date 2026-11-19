@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreRhkRequest;
 use App\Jobs\DeleteGdriveFiles;
+use App\Models\EvidentFile;
 use App\Models\Period;
 use App\Models\Rhk;
 use App\Services\Evident\LinkGenerator;
@@ -39,22 +40,30 @@ class RhkController extends Controller
             // Di-reload berkala (polling) selama ada yang 'processing'.
             'evidents' => fn () => $this->evidents($rhk, $links),
             'maxUploadMb' => config('evident.max_upload_mb'),
+            'maxFiles' => config('evident.max_files'),
+            'maxTotalMb' => config('evident.max_total_mb'),
             'allowedExtensions' => config('evident.allowed_extensions'),
         ]);
     }
 
     private function evidents(Rhk $rhk, LinkGenerator $links): array
     {
-        return $rhk->evidents()->latest()->get()->map(fn ($e) => [
+        return $rhk->evidents()->with('files')->latest()->get()->map(fn ($e) => [
             'id' => $e->id, 'title' => $e->title, 'type' => $e->evident_type,
-            'file_name' => $e->file_name, 'file_size' => $e->file_size, 'status' => $e->status,
+            'files' => $e->files->map(fn ($f) => [
+                'id' => $f->id, 'file_name' => $f->file_name, 'file_size' => $f->file_size,
+                'status' => $f->status, 'drive_link' => $f->gdrive_web_view_link,
+            ])->all(),
+            'total_size' => $e->files->sum('file_size'),
+            'status' => $e->status,
             'error' => $e->status === 'failed' ? ($e->metadata['error'] ?? null) : null,
             'reauth_required' => (bool) ($e->metadata['reauth_required'] ?? false),
             'is_protected' => $e->is_protected,
             'links' => $links->forEvident($e),
             'expires_at' => $e->expires_at?->format('Y-m-d'),
             'expired' => $e->isExpired(),
-            'drive_link' => $e->gdrive_web_view_link, 'external_url' => $e->external_url,
+            'drive_link' => $e->files->count() === 1 ? $e->files->first()->gdrive_web_view_link : null,
+            'external_url' => $e->external_url,
             'created_at' => $e->created_at->toIso8601String(),
         ])->all();
     }
@@ -72,7 +81,8 @@ class RhkController extends Controller
         Gate::authorize('delete', $rhk);
         $rhk->load('period');
 
-        $fileIds = $rhk->evidents()->whereNotNull('gdrive_file_id')->pluck('gdrive_file_id')->all();
+        $fileIds = EvidentFile::whereIn('evident_id', $rhk->evidents()->select('id'))
+            ->whereNotNull('gdrive_file_id')->pluck('gdrive_file_id')->all();
         $periodId = $rhk->period_id;
         $userId = $rhk->period->user_id;
         $rhk->delete();

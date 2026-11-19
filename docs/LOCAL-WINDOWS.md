@@ -23,7 +23,7 @@ Skrip terakhir membuat `.env`, memasukkan kredensial dari file JSON (tanpa menam
 
 ## Jalankan (dua jendela PowerShell di folder yang sama)
 ```powershell
-php -d upload_max_filesize=50M -d post_max_size=55M artisan serve
+php -d upload_max_filesize=50M -d post_max_size=95M -d max_file_uploads=20 artisan serve
 ```
 ```powershell
 php artisan queue:work --queue=uploads,default
@@ -46,4 +46,4 @@ Kumpulkan: pesan di layar, 20 baris terakhir `storage\logs\laravel.log`, dan out
 | `access_denied` / "app not verified" tidak bisa lanjut | Email belum ada di Audience → Test users (jika status Testing) |
 | Status tetap *Mengunggah…* | Jendela worker (`queue:work`) tidak berjalan |
 | Unggah gagal dengan pesan akses dicabut | Login ulang; pastikan kotak akses Drive dicentang |
-| Berkas > 2 MB gagal | `artisan serve` dijalankan tanpa opsi `-d upload_max_filesize=50M` |
+| Berkas > 2 MB gagal, atau banyak berkas sekaligus gagal | `artisan serve` dijalankan tanpa opsi `-d upload_max_filesize=50M -d post_max_size=95M -d max_file_uploads=20` |

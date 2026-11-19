@@ -17,7 +17,7 @@ class EvidentController extends Controller
         Gate::authorize('update', $rhk);
 
         if ($request->validated('evident_type') === 'file_upload') {
-            $uploads->storeFile($rhk, $request->file('file'), $request->validated('title'), $request->validated('pin'));
+            $uploads->storeFiles($rhk, array_values($request->file('files')), $request->validated('title'), $request->validated('pin'));
 
             return back()->with('success', 'Berkas diterima dan sedang diunggah ke Google Drive.');
         }
@@ -32,10 +32,10 @@ class EvidentController extends Controller
         Gate::authorize('delete', $evident);
         $evident->load('rhk.period');
 
-        $fileId = $evident->gdrive_file_id;
+        $fileIds = $evident->files()->whereNotNull('gdrive_file_id')->pluck('gdrive_file_id')->all();
         $userId = $evident->rhk->period->user_id;
         $evident->delete();
-        DeleteGdriveFiles::dispatchIf($fileId !== null, $userId, [$fileId]);
+        DeleteGdriveFiles::dispatchIf($fileIds !== [], $userId, $fileIds);
 
         return back()->with('success', 'Bukti dihapus.');
     }

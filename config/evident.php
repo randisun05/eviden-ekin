@@ -16,6 +16,12 @@ return [
     // Batas ukuran upload (MB). Samakan dengan upload_max_filesize/post_max_size PHP & client_max_body_size Nginx.
     'max_upload_mb' => (int) env('EVIDENT_MAX_UPLOAD_MB', 50),
 
+    // Satu bukti boleh berisi beberapa berkas. Batas jumlah & total ukuran (MB) per bukti.
+    // Samakan: post_max_size PHP & client_max_body_size Nginx >= max_total_mb + sedikit ruang,
+    // dan max_file_uploads PHP >= max_files.
+    'max_files' => (int) env('EVIDENT_MAX_FILES', 20),
+    'max_total_mb' => (int) env('EVIDENT_MAX_TOTAL_MB', 90),
+
     // Ekstensi yang diizinkan (divalidasi dari isi file, bukan hanya nama).
     'allowed_extensions' => ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'],
 

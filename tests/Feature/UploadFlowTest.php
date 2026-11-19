@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Exceptions\GoogleDriveException;
 use App\Jobs\ProcessGdriveUpload;
 use App\Models\Evident;
+use App\Models\EvidentFile;
 use App\Models\Period;
 use App\Models\Rhk;
 use App\Models\User;
@@ -42,50 +43,114 @@ class UploadFlowTest extends TestCase
         Queue::fake();
         $rhk = $this->rhk();
 
-        $e = app(EvidentUploadService::class)->storeFile($rhk, UploadedFile::fake()->create('lap.pdf', 10, 'application/pdf'), 'Laporan', '1234');
+        $e = app(EvidentUploadService::class)->storeFiles($rhk, [UploadedFile::fake()->create('lap.pdf', 10, 'application/pdf')], 'Laporan', '1234');
 
         $this->assertSame('processing', $e->status);
         $this->assertTrue($e->is_protected);
         $this->assertNotSame('1234', $e->getRawOriginal('access_pin')); // hash
         $this->assertCount(1, Storage::disk('staging')->files());
-        Queue::assertPushedOn('uploads', ProcessGdriveUpload::class, fn ($j) => $j->evidentId === $e->id);
+        $this->assertSame('processing', $e->files->first()->status);
+        Queue::assertPushedOn('uploads', ProcessGdriveUpload::class, fn ($j) => $j->fileId === $e->files->first()->id);
+    }
+
+    /** Bukti dengan N berkas 'processing'. @return array{0:Evident,1:list<EvidentFile>} */
+    private function evidentWithFiles(int $n = 1, string $status = 'processing'): array
+    {
+        $rhk = $this->rhk();
+        $e = Evident::create(['rhk_id' => $rhk->id, 'title' => 'T', 'evident_type' => 'file_upload', 'status' => $status]);
+        $files = [];
+        for ($i = 0; $i < $n; $i++) {
+            $files[] = $e->files()->create(['position' => $i, 'file_name' => "a$i.pdf", 'mime_type' => 'application/pdf', 'status' => $status]);
+        }
+
+        return [$e, $files];
+    }
+
+    private function bindDrive(callable $configure): void
+    {
+        $svc = Mockery::mock(GoogleDriveService::class);
+        $configure($svc);
+        $this->app->bind(GoogleDriveService::class, fn () => $svc);
     }
 
     public function test_job_uploads_marks_ready_and_deletes_staging(): void
     {
         Storage::fake('staging');
         Storage::disk('staging')->put('s.pdf', 'x');
-        $rhk = $this->rhk();
-        $e = Evident::create(['rhk_id' => $rhk->id, 'title' => 'T', 'evident_type' => 'file_upload',
-            'file_name' => 'a.pdf', 'mime_type' => 'application/pdf']);
+        [$e, [$f]] = $this->evidentWithFiles();
 
-        $svc = Mockery::mock(GoogleDriveService::class);
-        $svc->shouldReceive('uploadToPath')->once()
-            ->with(['2025', 'Triwulan I', 'RHK-01'], Mockery::type('string'), 'a.pdf', 'application/pdf', ['evident_id' => $e->id])
-            ->andReturn($this->driveResult());
-        $this->app->bind(GoogleDriveService::class, fn () => $svc);
+        $this->bindDrive(fn ($svc) => $svc->shouldReceive('uploadToPath')->once()
+            ->with(['2025', 'Triwulan I', 'RHK-01'], Mockery::type('string'), 'a0.pdf', 'application/pdf', ['evident_file_id' => $f->id])
+            ->andReturn($this->driveResult()));
 
-        (new ProcessGdriveUpload($e->id, 's.pdf'))->handle();
+        (new ProcessGdriveUpload($f->id, 's.pdf'))->handle();
+
+        $f->refresh();
+        $this->assertSame('ready', $f->status);
+        $this->assertSame('FILE1', $f->gdrive_file_id);
+        $this->assertSame('FOL', $f->gdrive_folder_id);
+        $this->assertSame('ready', $e->fresh()->status);
+        Storage::disk('staging')->assertMissing('s.pdf');
+    }
+
+    public function test_evident_stays_processing_until_every_file_is_ready(): void
+    {
+        Storage::fake('staging');
+        Storage::disk('staging')->put('s0.pdf', 'x');
+        Storage::disk('staging')->put('s1.pdf', 'x');
+        [$e, [$f0, $f1]] = $this->evidentWithFiles(2);
+        $this->bindDrive(fn ($svc) => $svc->shouldReceive('uploadToPath')->twice()->andReturn($this->driveResult(), $this->driveResult()));
+
+        (new ProcessGdriveUpload($f0->id, 's0.pdf'))->handle();
+        $this->assertSame('processing', $e->fresh()->status);
+        $this->assertSame('ready', $f0->fresh()->status);
+
+        (new ProcessGdriveUpload($f1->id, 's1.pdf'))->handle();
+        $this->assertSame('ready', $e->fresh()->status);
+    }
+
+    public function test_one_failed_file_fails_the_evident_only_after_the_others_finish(): void
+    {
+        Storage::fake('staging');
+        Storage::disk('staging')->put('s0.pdf', 'x');
+        Storage::disk('staging')->put('s1.pdf', 'x');
+        [$e, [$f0, $f1]] = $this->evidentWithFiles(2);
+        $this->bindDrive(fn ($svc) => $svc->shouldReceive('uploadToPath')->once()->andReturn($this->driveResult()));
+
+        (new ProcessGdriveUpload($f0->id, 's0.pdf'))->failed(GoogleDriveException::reauthRequired());
+        $this->assertSame('processing', $e->fresh()->status); // berkas lain masih berjalan
+
+        (new ProcessGdriveUpload($f1->id, 's1.pdf'))->handle();
 
         $e->refresh();
-        $this->assertSame('ready', $e->status);
-        $this->assertSame('FILE1', $e->gdrive_file_id);
-        $this->assertSame('FOL', $e->gdrive_folder_id);
-        Storage::disk('staging')->assertMissing('s.pdf');
+        $this->assertSame('failed', $e->status);
+        $this->assertTrue($e->metadata['reauth_required']);
+        $this->assertSame('ready', $f1->fresh()->status);
+        $this->assertSame('failed', $f0->fresh()->status);
     }
 
     public function test_job_is_noop_when_already_ready(): void
     {
         Storage::fake('staging');
         Storage::disk('staging')->put('s.pdf', 'x');
-        $rhk = $this->rhk();
-        $e = Evident::create(['rhk_id' => $rhk->id, 'title' => 'T', 'evident_type' => 'file_upload', 'status' => 'ready']);
+        [, [$f]] = $this->evidentWithFiles(1, 'ready');
+        $this->bindDrive(fn ($svc) => $svc->shouldNotReceive('uploadToPath'));
 
-        $svc = Mockery::mock(GoogleDriveService::class);
-        $svc->shouldNotReceive('uploadToPath');
-        $this->app->bind(GoogleDriveService::class, fn () => $svc);
+        (new ProcessGdriveUpload($f->id, 's.pdf'))->handle();
 
-        (new ProcessGdriveUpload($e->id, 's.pdf'))->handle();
+        Storage::disk('staging')->assertMissing('s.pdf');
+    }
+
+    public function test_job_cleans_up_when_file_was_deleted_meanwhile(): void
+    {
+        Storage::fake('staging');
+        Storage::disk('staging')->put('s.pdf', 'x');
+        [$e, [$f]] = $this->evidentWithFiles();
+        $id = $f->id;
+        $e->delete();
+        $this->bindDrive(fn ($svc) => $svc->shouldNotReceive('uploadToPath'));
+
+        (new ProcessGdriveUpload($id, 's.pdf'))->handle();
 
         Storage::disk('staging')->assertMissing('s.pdf');
     }
@@ -94,14 +159,14 @@ class UploadFlowTest extends TestCase
     {
         Storage::fake('staging');
         Storage::disk('staging')->put('s.pdf', 'x');
-        $rhk = $this->rhk();
-        $e = Evident::create(['rhk_id' => $rhk->id, 'title' => 'T', 'evident_type' => 'file_upload']);
+        [$e, [$f]] = $this->evidentWithFiles();
 
-        (new ProcessGdriveUpload($e->id, 's.pdf'))->failed(GoogleDriveException::reauthRequired());
+        (new ProcessGdriveUpload($f->id, 's.pdf'))->failed(GoogleDriveException::reauthRequired());
 
         $e->refresh();
         $this->assertSame('failed', $e->status);
         $this->assertTrue($e->metadata['reauth_required']);
+        $this->assertSame('failed', $f->fresh()->status);
         Storage::disk('staging')->assertMissing('s.pdf');
     }
 }

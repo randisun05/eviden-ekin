@@ -86,7 +86,7 @@ sudo supervisorctl reread && sudo supervisorctl update
 sudo supervisorctl status          # evident-horizon & evident-scheduler harus RUNNING
 ```
 
-**Batas upload harus sama di tiga tempat:** `EVIDENT_MAX_UPLOAD_MB` (50) = `upload_max_filesize` PHP (50M) < `client_max_body_size` Nginx (55m). Cloudflare membatasi body request 100 MB pada paket gratis dan Pro.
+**Batas upload harus sejalan di tiga tempat:** `EVIDENT_MAX_UPLOAD_MB` (50, per berkas) ≤ `upload_max_filesize` PHP (50M); `EVIDENT_MAX_TOTAL_MB` (90, total satu bukti) < `post_max_size` PHP (95M) = `client_max_body_size` Nginx (95m); `EVIDENT_MAX_FILES` (20) ≤ `max_file_uploads` PHP (20). Cloudflare membatasi body request 100 MB pada paket gratis dan Pro, jadi total per bukti jangan melebihi ±95 MB.
 
 ## 6. Cloudflare Tunnel
 

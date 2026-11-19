@@ -34,10 +34,13 @@ class Housekeeping extends Command
         $stuck = Evident::where('status', 'processing')->where('created_at', '<', $cutoff);
         $failed = $stuck->count();
         if (! $dry) {
-            $stuck->get()->each(fn (Evident $e) => $e->update([
-                'status' => 'failed',
-                'metadata' => array_merge($e->metadata ?? [], ['error' => 'Unggahan tidak selesai (kedaluwarsa).']),
-            ]));
+            $stuck->get()->each(function (Evident $e) {
+                $e->files()->where('status', 'processing')->update(['status' => 'failed', 'error' => 'Unggahan tidak selesai (kedaluwarsa).']);
+                $e->update([
+                    'status' => 'failed',
+                    'metadata' => array_merge($e->metadata ?? [], ['error' => 'Unggahan tidak selesai (kedaluwarsa).']),
+                ]);
+            });
         }
 
         $this->info(($dry ? '[dry-run] ' : '')."Staging dihapus: {$removed}; upload macet ditandai gagal: {$failed}.");
