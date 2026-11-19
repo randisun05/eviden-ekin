@@ -122,7 +122,7 @@ class ViewerController extends Controller
             'owner' => $rhk->period->user->name,
             'period' => $rhk->period->title.' '.$rhk->period->year,
             'rhk' => $rhk->only(['code', 'title', 'target_description']),
-            'expires_at' => $target->expires_at?->toIso8601String(),
+            'expires_at' => $target->expires_at?->format('Y-m-d'), // tanggal saja: hindari geser hari karena zona waktu browser
             'items' => $evidents->map(fn (Evident $e) => $this->item($e))->values(),
         ];
     }

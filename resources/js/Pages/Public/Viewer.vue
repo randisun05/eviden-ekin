@@ -22,7 +22,8 @@ defineProps<{
 const open = reactive<Record<string, boolean>>({});
 const icon = (k: ViewerFile['kind'] | 'link') => (k === 'image' ? ImageIcon : k === 'link' ? Link2 : FileText);
 const host = (u: string | null) => { try { return u ? new URL(u).host : ''; } catch { return ''; } };
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+// 'YYYY-MM-DD' diurai sebagai tanggal lokal (bukan UTC) agar tidak bergeser sehari.
+const fmtDate = (d: string) => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }); };
 </script>
 
 <template>
