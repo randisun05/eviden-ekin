@@ -49,7 +49,7 @@ class RhkController extends Controller
     private function evidents(Rhk $rhk, LinkGenerator $links): array
     {
         return $rhk->evidents()->with('files')->latest()->get()->map(fn ($e) => [
-            'id' => $e->id, 'title' => $e->title, 'type' => $e->evident_type,
+            'id' => $e->id, 'title' => $e->title, 'description' => $e->description, 'type' => $e->evident_type,
             'files' => $e->files->map(fn ($f) => [
                 'id' => $f->id, 'file_name' => $f->file_name, 'file_size' => $f->file_size,
                 'status' => $f->status, 'drive_link' => $f->gdrive_web_view_link,

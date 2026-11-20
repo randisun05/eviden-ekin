@@ -17,7 +17,7 @@ export interface EvidentFileItem {
 }
 
 export interface EvidentItem {
-    id: string; title: string; type: 'file_upload' | 'external_link';
+    id: string; title: string; description: string | null; type: 'file_upload' | 'external_link';
     files: EvidentFileItem[]; total_size: number;
     status: 'processing' | 'ready' | 'failed';
     error: string | null; reauth_required: boolean; is_protected: boolean;
@@ -33,7 +33,7 @@ export interface ViewerFile {
 }
 
 export interface ViewerItem {
-    id: string; title: string; kind: 'file' | 'link';
+    id: string; title: string; description?: string | null; kind: 'file' | 'link';
     files?: ViewerFile[]; open_url?: string | null;
 }
 

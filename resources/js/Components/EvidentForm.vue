@@ -20,7 +20,7 @@ const props = defineProps<{
 const mode = ref<'file_upload' | 'external_link'>('file_upload');
 const fileInput = ref<HTMLInputElement | null>(null);
 const form = useForm({
-    evident_type: 'file_upload', title: '', files: [] as File[], external_url: '', pin: '',
+    evident_type: 'file_upload', title: '', description: '', files: [] as File[], external_url: '', pin: '',
 });
 
 const syncInput = () => {
@@ -43,7 +43,7 @@ const removeFile = (i: number) => {
 
 const submit = () => {
     form.transform((d) => ({
-        evident_type: mode.value, title: d.title, pin: d.pin || null,
+        evident_type: mode.value, title: d.title, description: d.description, pin: d.pin || null,
         ...(mode.value === 'file_upload' ? { files: d.files } : { external_url: d.external_url }),
     })).post(`/rhks/${props.rhk.id}/evidents`, {
         forceFormData: true,
@@ -99,6 +99,14 @@ const canSubmit = computed(() => !form.processing && !sizeError.value && (!isFil
                     <Label for="url">Tautan (http/https)</Label>
                     <Input id="url" v-model="form.external_url" type="url" required placeholder="https://…" />
                     <p v-if="form.errors.external_url" class="text-sm text-destructive">{{ form.errors.external_url }}</p>
+                </div>
+
+                <div class="space-y-2">
+                    <Label for="edesc">Deskripsi pekerjaan</Label>
+                    <textarea id="edesc" v-model="form.description" required maxlength="2000" rows="3"
+                        placeholder="Jelaskan pekerjaan yang dibuktikan oleh bukti ini"
+                        class="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                    <p v-if="form.errors.description" class="text-sm text-destructive">{{ form.errors.description }}</p>
                 </div>
 
                 <div class="grid gap-4 sm:grid-cols-[1fr_12rem]">

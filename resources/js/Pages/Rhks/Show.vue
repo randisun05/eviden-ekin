@@ -94,6 +94,7 @@ const statusMeta = {
                     <component :is="e.type === 'file_upload' ? (e.files.length > 1 ? Files : FileText) : Link2" class="size-5 shrink-0 text-muted-foreground" />
                     <div class="min-w-0 flex-1">
                         <p class="truncate font-medium">{{ e.title }}</p>
+                        <p v-if="e.description" class="whitespace-pre-line text-sm text-muted-foreground">{{ e.description }}</p>
                         <p v-if="e.type === 'external_link'" class="truncate text-xs text-muted-foreground">{{ e.external_url }}</p>
                         <p v-else-if="e.files.length === 1" class="truncate text-xs text-muted-foreground">{{ e.files[0].file_name }} · {{ formatBytes(e.files[0].file_size) }}</p>
                         <p v-else class="text-xs text-muted-foreground">{{ e.files.length }} berkas · {{ formatBytes(e.total_size) }}</p>

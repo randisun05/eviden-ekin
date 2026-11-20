@@ -71,7 +71,7 @@ class EvidenceManagementTest extends TestCase
         $this->actingAs($evil)->get("/periods/{$rhk->period_id}")->assertForbidden();
         $this->actingAs($evil)->get("/rhks/{$rhk->id}")->assertForbidden();
         $this->actingAs($evil)->post("/periods/{$rhk->period_id}/rhks", ['code' => 'X', 'title' => 'x'])->assertForbidden();
-        $this->actingAs($evil)->post("/rhks/{$rhk->id}/evidents", ['evident_type' => 'external_link', 'title' => 't', 'external_url' => 'https://a.b'])->assertForbidden();
+        $this->actingAs($evil)->post("/rhks/{$rhk->id}/evidents", ['evident_type' => 'external_link', 'title' => 't', 'description' => 'd', 'external_url' => 'https://a.b'])->assertForbidden();
         $this->actingAs($evil)->delete("/evidents/{$e->id}")->assertForbidden();
         $this->actingAs($evil)->delete("/periods/{$rhk->period_id}")->assertForbidden();
         $this->assertDatabaseCount('evidents', 1);
@@ -84,7 +84,7 @@ class EvidenceManagementTest extends TestCase
         $u = $this->user();
         $rhk = $this->rhkFor($u);
         $url = "/rhks/{$rhk->id}/evidents";
-        $base = ['evident_type' => 'file_upload', 'title' => 'Laporan'];
+        $base = ['evident_type' => 'file_upload', 'title' => 'Laporan', 'description' => 'Menyusun laporan'];
 
         // ekstensi berbahaya
         $this->actingAs($u)->post($url, $base + ['files' => [UploadedFile::fake()->create('x.php', 1)]])->assertSessionHasErrors('files.0');
@@ -105,6 +105,16 @@ class EvidenceManagementTest extends TestCase
         $this->assertDatabaseCount('evidents', 0);
     }
 
+    public function test_description_is_required(): void
+    {
+        $u = $this->user();
+        $rhk = $this->rhkFor($u);
+
+        $this->actingAs($u)->post("/rhks/{$rhk->id}/evidents", ['evident_type' => 'external_link', 'title' => 't', 'external_url' => 'https://a.b'])
+            ->assertSessionHasErrors('description');
+        $this->assertDatabaseCount('evidents', 0);
+    }
+
     public function test_valid_file_upload_queues_job(): void
     {
         Storage::fake('staging');
@@ -113,11 +123,12 @@ class EvidenceManagementTest extends TestCase
         $rhk = $this->rhkFor($u);
 
         $this->actingAs($u)->post("/rhks/{$rhk->id}/evidents", [
-            'evident_type' => 'file_upload', 'title' => 'Laporan', 'pin' => '1234',
+            'evident_type' => 'file_upload', 'title' => 'Laporan', 'description' => 'Menyusun laporan', 'pin' => '1234',
             'files' => [UploadedFile::fake()->create('a.pdf', 5, 'application/pdf')],
         ])->assertSessionHasNoErrors()->assertRedirect();
 
         $e = Evident::firstOrFail();
+        $this->assertSame('Menyusun laporan', $e->description);
         $this->assertSame('processing', $e->status);
         $this->assertSame(8, strlen($e->app_short_code));
         $this->assertCount(1, $e->files);
@@ -132,7 +143,7 @@ class EvidenceManagementTest extends TestCase
         $rhk = $this->rhkFor($u);
 
         $this->actingAs($u)->post("/rhks/{$rhk->id}/evidents", [
-            'evident_type' => 'file_upload', 'title' => 'Paket bukti',
+            'evident_type' => 'file_upload', 'title' => 'Paket bukti', 'description' => 'Paket',
             'files' => [
                 UploadedFile::fake()->create('a.pdf', 5, 'application/pdf'),
                 UploadedFile::fake()->create('b.pdf', 6, 'application/pdf'),
@@ -158,13 +169,13 @@ class EvidenceManagementTest extends TestCase
         $mk = fn (int $n, int $kb = 5) => array_map(fn ($i) => UploadedFile::fake()->create("f$i.pdf", $kb, 'application/pdf'), range(1, $n));
 
         config(['evident.max_files' => 2]);
-        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'files' => $mk(3)])->assertSessionHasErrors('files');
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'description' => 'd', 'files' => $mk(3)])->assertSessionHasErrors('files');
 
         config(['evident.max_files' => 20, 'evident.max_total_mb' => 1]);
-        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'files' => $mk(2, 700)])->assertSessionHasErrors('files');
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'description' => 'd', 'files' => $mk(2, 700)])->assertSessionHasErrors('files');
 
-        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'files' => []])->assertSessionHasErrors('files');
-        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't'])->assertSessionHasErrors('files');
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'description' => 'd', 'files' => []])->assertSessionHasErrors('files');
+        $this->actingAs($u)->post($url, ['evident_type' => 'file_upload', 'title' => 't', 'description' => 'd'])->assertSessionHasErrors('files');
 
         Queue::assertNothingPushed();
         $this->assertDatabaseCount('evidents', 0);
@@ -193,9 +204,9 @@ class EvidenceManagementTest extends TestCase
         $rhk = $this->rhkFor($u);
         $url = "/rhks/{$rhk->id}/evidents";
 
-        $this->actingAs($u)->post($url, ['evident_type' => 'external_link', 'title' => 't', 'external_url' => 'javascript:alert(1)'])
+        $this->actingAs($u)->post($url, ['evident_type' => 'external_link', 'title' => 't', 'description' => 'd', 'external_url' => 'javascript:alert(1)'])
             ->assertSessionHasErrors('external_url');
-        $this->actingAs($u)->post($url, ['evident_type' => 'external_link', 'title' => 't', 'external_url' => 'https://drive.google.com/x'])
+        $this->actingAs($u)->post($url, ['evident_type' => 'external_link', 'title' => 't', 'description' => 'd', 'external_url' => 'https://drive.google.com/x'])
             ->assertSessionHasNoErrors();
         $this->assertSame('ready', Evident::firstOrFail()->status);
     }

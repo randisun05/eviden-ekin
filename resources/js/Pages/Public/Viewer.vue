@@ -44,6 +44,8 @@ const fmtDate = (d: string) => { const [y, m, day] = d.split('-').map(Number); r
         <li v-for="it in items" :key="it.id">
             <Card>
                 <CardContent class="p-4">
+                    <p v-if="it.description" class="mb-3 whitespace-pre-line text-sm text-muted-foreground">{{ it.description }}</p>
+
                     <!-- Tautan eksternal -->
                     <div v-if="it.kind === 'link'" class="flex flex-wrap items-center gap-3">
                         <Link2 class="size-5 shrink-0 text-muted-foreground" />

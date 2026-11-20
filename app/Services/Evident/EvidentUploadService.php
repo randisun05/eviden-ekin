@@ -18,7 +18,7 @@ class EvidentUploadService
      *
      * @param  list<UploadedFile>  $files
      */
-    public function storeFiles(Rhk $rhk, array $files, string $title, ?string $pin = null): Evident
+    public function storeFiles(Rhk $rhk, array $files, string $title, string $description, ?string $pin = null): Evident
     {
         $staged = []; // [UploadedFile, stagingName]
         try {
@@ -28,10 +28,11 @@ class EvidentUploadService
                 $staged[] = [$file, $name];
             }
 
-            [$evident, $rows] = DB::transaction(function () use ($rhk, $staged, $title, $pin) {
+            [$evident, $rows] = DB::transaction(function () use ($rhk, $staged, $title, $description, $pin) {
                 $evident = Evident::create([
                     'rhk_id' => $rhk->id,
                     'title' => $title,
+                    'description' => $description,
                     'evident_type' => 'file_upload',
                     'is_protected' => $pin !== null,
                     'access_pin' => $pin,
@@ -65,11 +66,12 @@ class EvidentUploadService
         return $evident;
     }
 
-    public function storeExternalLink(Rhk $rhk, string $title, string $url, ?string $pin = null): Evident
+    public function storeExternalLink(Rhk $rhk, string $title, string $description, string $url, ?string $pin = null): Evident
     {
         return Evident::create([
             'rhk_id' => $rhk->id,
             'title' => $title,
+            'description' => $description,
             'evident_type' => 'external_link',
             'external_url' => $url,
             'is_protected' => $pin !== null,

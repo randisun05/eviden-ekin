@@ -19,6 +19,7 @@ class StoreEvidentRequest extends FormRequest
         return [
             'evident_type' => ['required', 'in:file_upload,external_link'],
             'title' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:2000'],
             'files' => [$isFile ? 'required' : 'prohibited', 'array', 'min:1', 'max:'.config('evident.max_files')],
             'files.*' => ['file',
                 'max:'.(config('evident.max_upload_mb') * 1024),
@@ -47,6 +48,6 @@ class StoreEvidentRequest extends FormRequest
 
     public function attributes(): array
     {
-        return ['files' => 'berkas', 'files.*' => 'berkas', 'external_url' => 'tautan', 'title' => 'judul', 'pin' => 'PIN'];
+        return ['files' => 'berkas', 'files.*' => 'berkas', 'external_url' => 'tautan', 'title' => 'judul', 'description' => 'deskripsi', 'pin' => 'PIN'];
     }
 }

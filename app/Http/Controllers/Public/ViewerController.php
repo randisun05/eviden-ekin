@@ -130,7 +130,7 @@ class ViewerController extends Controller
     private function item(Evident $e): array
     {
         if ($e->evident_type === 'external_link') {
-            return ['id' => $e->id, 'title' => $e->title, 'kind' => 'link', 'open_url' => $e->external_url];
+            return ['id' => $e->id, 'title' => $e->title, 'description' => $e->description, 'kind' => 'link', 'open_url' => $e->external_url];
         }
 
         $files = $e->files->where('status', 'ready')->map(function ($f) {
@@ -147,6 +147,6 @@ class ViewerController extends Controller
             ];
         })->values()->all();
 
-        return ['id' => $e->id, 'title' => $e->title, 'kind' => 'file', 'files' => $files];
+        return ['id' => $e->id, 'title' => $e->title, 'description' => $e->description, 'kind' => 'file', 'files' => $files];
     }
 }

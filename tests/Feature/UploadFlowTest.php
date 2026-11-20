@@ -43,7 +43,7 @@ class UploadFlowTest extends TestCase
         Queue::fake();
         $rhk = $this->rhk();
 
-        $e = app(EvidentUploadService::class)->storeFiles($rhk, [UploadedFile::fake()->create('lap.pdf', 10, 'application/pdf')], 'Laporan', '1234');
+        $e = app(EvidentUploadService::class)->storeFiles($rhk, [UploadedFile::fake()->create('lap.pdf', 10, 'application/pdf')], 'Laporan', 'Menyusun laporan', '1234');
 
         $this->assertSame('processing', $e->status);
         $this->assertTrue($e->is_protected);

@@ -17,12 +17,12 @@ class EvidentController extends Controller
         Gate::authorize('update', $rhk);
 
         if ($request->validated('evident_type') === 'file_upload') {
-            $uploads->storeFiles($rhk, array_values($request->file('files')), $request->validated('title'), $request->validated('pin'));
+            $uploads->storeFiles($rhk, array_values($request->file('files')), $request->validated('title'), $request->validated('description'), $request->validated('pin'));
 
             return back()->with('success', 'Berkas diterima dan sedang diunggah ke Google Drive.');
         }
 
-        $uploads->storeExternalLink($rhk, $request->validated('title'), $request->validated('external_url'), $request->validated('pin'));
+        $uploads->storeExternalLink($rhk, $request->validated('title'), $request->validated('description'), $request->validated('external_url'), $request->validated('pin'));
 
         return back()->with('success', 'Tautan eksternal ditambahkan.');
     }

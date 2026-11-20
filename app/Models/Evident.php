@@ -14,7 +14,7 @@ class Evident extends Model
     use HasUuidV4;
 
     protected $fillable = [
-        'rhk_id', 'title', 'evident_type', 'external_url', 'app_short_code',
+        'rhk_id', 'title', 'description', 'evident_type', 'external_url', 'app_short_code',
         'is_protected', 'access_pin', 'expires_at', 'status', 'metadata',
     ];
 
